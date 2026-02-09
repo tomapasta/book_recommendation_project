@@ -4,7 +4,7 @@ from pathlib import Path
 
 # ===== paths =====
 INPUT_JSONL = Path("data/raw/goodreads_books.jsonl")
-OUTPUT_CSV = Path("data/processed/goodreads_books.csv")
+OUTPUT_CSV = Path("data/processed/goodreads_books_2.csv")
 
 OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
 

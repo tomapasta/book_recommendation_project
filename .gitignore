@@ -6,4 +6,4 @@ notebooks/.env
 notebooks/.DS_Store
 .DS_Store
 *.in
-/sql/
+/sql/Untitled*.ipynb

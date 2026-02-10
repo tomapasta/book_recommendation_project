@@ -7,3 +7,4 @@ notebooks/.DS_Store
 .DS_Store
 *.in
 /sql/Untitled*.ipynb
+__pycache__/

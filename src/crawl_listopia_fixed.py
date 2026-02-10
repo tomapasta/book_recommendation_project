@@ -39,6 +39,12 @@ HEADERS = {
 
 BASE_URL = "https://www.goodreads.com"
 
+SESSION = requests.Session()
+HEADERS.update({
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml",
+})
+
 YEAR_RE = re.compile(r"\b(18|19|20)\d{2}\b")
 PAGES_RE = re.compile(r"(\d+)\s+pages", re.IGNORECASE)
 
@@ -60,7 +66,7 @@ def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
     last_error = None
     for _ in range(retries):
         try:
-            response = requests.get(url, headers=HEADERS, timeout=timeout)
+            response = SESSION.get(url, headers=HEADERS, timeout=timeout)
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -177,6 +183,42 @@ def collect_book_urls(
 # Book detail parsing (JSON-LD + HTML fallback)
 # ============================================================
 
+def extract_description(soup: BeautifulSoup) -> str:
+    """
+    Best-effort description extraction from HTML (fallback when JSON-LD is missing).
+
+    Goodreads often renders the description inside a "TruncatedContent" block and/or
+    behind dynamic UI. These selectors aim to cover common layouts.
+    """
+    candidates = [
+        # Newer layouts
+        '[data-testid="description"] .TruncatedContent__text',
+        '[data-testid="description"] .Formatted',
+        '[data-testid="description"] span',
+        '[data-testid="description"]',
+        '.BookPageMetadataSection__description .TruncatedContent__text',
+        '.BookPageMetadataSection__description .Formatted',
+        # Older layout
+        '#description span[style]',
+        '#description span',
+        '#description',
+    ]
+    for sel in candidates:
+        node = soup.select_one(sel)
+        if node:
+            txt = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            # Filter out very short / non-informative snippets
+            if len(txt) >= 40:
+                return txt
+
+    # OpenGraph fallback (often short, but better than empty)
+    meta = soup.select_one('meta[property="og:description"]')
+    if meta:
+        content = re.sub(r"\s+", " ", meta.get("content", "").strip())
+        return content
+
+    return ""
+
 def extract_jsonld_blocks(soup: BeautifulSoup) -> list[dict]:
     """
     Extract all JSON-LD blocks from a page.
@@ -213,9 +255,6 @@ def select_book_jsonld(blocks: list[dict]) -> dict | None:
 
 
 def parse_book_from_jsonld(book: dict) -> dict:
-    """
-    Parse core book metadata from JSON-LD.
-    """
     author = ""
     a = book.get("author")
     if isinstance(a, dict):
@@ -234,6 +273,11 @@ def parse_book_from_jsonld(book: dict) -> dict:
     if isinstance(image, list) and image:
         image = image[0]
 
+    lang = book.get("inLanguage", "")
+    if isinstance(lang, list):
+        lang = lang[0] if lang else ""
+    lang = str(lang).strip()
+
     return {
         "title": book.get("name", ""),
         "author": author,
@@ -243,7 +287,35 @@ def parse_book_from_jsonld(book: dict) -> dict:
         "isbn": book.get("isbn", ""),
         "image": image,
         "url_from_jsonld": book.get("url") or book.get("@id", ""),
+        "language": lang  
     }
+
+
+YEAR_IN_STR_RE = re.compile(r"(18|19|20)\d{2}")
+
+def extract_published_year_from_jsonld(book: dict | None) -> int | None:
+    """
+    Try to read a published year from common JSON-LD fields.
+    Goodreads' JSON-LD is inconsistent; this is a best-effort helper.
+    """
+    if not book or not isinstance(book, dict):
+        return None
+
+    for key in ("datePublished", "copyrightYear", "publicationDate"):
+        val = book.get(key)
+        if not val:
+            continue
+        # datePublished may be "1997-06-26" or "1997"
+        if isinstance(val, (int, float)):
+            y = int(val)
+            if 1000 <= y <= 2100:
+                return y
+        if isinstance(val, str):
+            m = YEAR_IN_STR_RE.search(val)
+            if m:
+                return int(m.group(0))
+
+    return None
 
 
 def extract_pages(soup: BeautifulSoup) -> int | None:
@@ -252,21 +324,34 @@ def extract_pages(soup: BeautifulSoup) -> int | None:
     return int(match.group(1)) if match else None
 
 
+PUBLISHED_RE = re.compile(
+    r"(first\s+published|published)\s+(?:.*?\s+)?(\b(18|19|20)\d{2}\b)",
+    re.IGNORECASE
+)
+
 def extract_published_year(soup: BeautifulSoup) -> int | None:
-    node = soup.select_one(".TruncatedContent_text--small")
-    if node:
-        match = YEAR_RE.search(node.get_text(" ", strip=True))
-        if match:
-            return int(match.group(0))
-    return None
+    text = soup.get_text(" ", strip=True)
+
+    m = PUBLISHED_RE.search(text)
+    if m:
+        return int(m.group(2))
+
+    m2 = YEAR_RE.search(text)
+    return int(m2.group(0)) if m2 else None
 
 
 def extract_language(soup: BeautifulSoup) -> str:
-    for div in soup.select("div.TruncatedContent_text--small"):
-        text = div.get_text(strip=True)
-        if text.isalpha() and 3 <= len(text) <= 15:
-            return text
-    return ""
+    for div in soup.select(".BookDetails .BookDetails__listItem"):
+        text = div.get_text(" ", strip=True)
+        if text.lower().startswith("language"):
+            parts = text.split()
+            if len(parts) >= 2:
+                return parts[-1]
+
+    LANG_RE = re.compile(r"Language\s*[:\-]?\s*(English|Spanish|French|German|Italian)", re.IGNORECASE)
+    text = soup.get_text(" ", strip=True)
+    m = LANG_RE.search(text)
+    return m.group(1) if m else ""
 
 
 def extract_genres(soup: BeautifulSoup, top_k: int = 5) -> list[str]:
@@ -285,9 +370,21 @@ def parse_full_book(book_url: str) -> dict:
 
     data = parse_book_from_jsonld(book_json) if book_json else {}
     data["book_url"] = book_url
+
+    if not data.get("description"):
+        data["description"] = extract_description(soup)
+
     data["pages"] = extract_pages(soup)
-    data["published_year"] = extract_published_year(soup)
-    data["language"] = extract_language(soup)
+    py_json = extract_published_year_from_jsonld(book_json)
+    data["published_year"] = py_json or extract_published_year(soup)
+
+    if not data.get("language"):
+        data["language"] = extract_language(soup)
+
+    if not data.get("language"):
+        html_lang = (soup.html.get("lang", "") if soup.html else "").strip()
+        data["language"] = html_lang.split("-")[0] if html_lang else ""
+
     data["genres"] = extract_genres(soup)
 
     return data

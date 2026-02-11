@@ -8,6 +8,7 @@
 ![pandas](https://img.shields.io/badge/pandas-Data%20Analysis-150458?logo=pandas&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-Numerical%20Computing-013243?logo=numpy&logoColor=white)
 ![BeautifulSoup](https://img.shields.io/badge/Beautiful%20Soup-Web%20Scraping-006400?style=flat&logo=python&logoColor=white)
+![API](https://img.shields.io/badge/Interface-API-red?style=flat&logo=api&logoColor=white)
 ![Seaborn](https://img.shields.io/badge/Seaborn-Statistical%20Visualization-4C72B0?style=flat&logo=python&logoColor=white)
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-Visualization-11557C?style=flat&logo=python&logoColor=white)
 ![Requests](https://img.shields.io/badge/Requests-HTTP%20Library-005500?style=flat&logo=python&logoColor=white)

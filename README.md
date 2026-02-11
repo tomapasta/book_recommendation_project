@@ -1,7 +1,5 @@
-# 📖 Book Recommender App Project 
-[Book Recommender App] is a context-aware engine designed to solve *Choice Overload* in the reading world. While traditional platforms rely on static genres, authors etc, we match readers with the perfect book for their specific moment.
-
----
+# 📖 Book Recommender App Project 📖
+**Book Recommender App** is a context-aware engine designed to solve *Choice Overload* in the reading world. While traditional platforms rely on static genres, authors etc, we match readers with the perfect book for their specific moment.
 
 ## 🛠️ Tech Stack & Tools
 
